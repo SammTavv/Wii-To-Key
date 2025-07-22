@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using WiimoteLib;
 using WindowsInput;
 using WindowsInput.Native;
@@ -19,13 +20,14 @@ class Program
     public static double sensitivityX = 40;
     public static double sensitivityY = 20;
     public static double deadzone = 0.05;
-    public static List<Button> scrollKeys = new List<Button>();
-    public static List<Button> cancelKeys = new List<Button>();
+    public static List<Button> scrollKeys = [];
+    public static List<Button> cancelKeys = [];
     public static bool showConfigs = true;
     public static bool debug = false;
     public static bool mousePressKey = false;
     public static bool cancelPressed = false;
     public static bool useTiltSteering = false;
+    public static List<Button> stopKeys = [];
 
     private const int screenWidth = 1920;
     private const int screenHeight = 1080;
@@ -37,11 +39,12 @@ class Program
         $"Mouse Sensitivity X: {sensitivityX}" +
         $"\nMouse Sensitivity Y: {sensitivityY}" +
         $"\nJoystick Deadzone: {deadzone}" +
-        $"\nMouse Scroll Key: C, Z" +
-        $"\nJoystick Keyboard Key: Plus, Minus" +
+        $"\nMouse Scroll: C, Z" +
+        $"\nJoystick Keyboard: Plus, Minus" +
         $"\nShow: true" +
         $"\nDebug: false" +
-        $"\nUse Tilt Steering: false";
+        $"\nUse Steering: false" +
+        $"\nStop Program: A, B, Home";
 
     /// <summary>
     /// Holds every Wiimote (+ Nunchuck) button
@@ -108,11 +111,14 @@ class Program
                     Console.WriteLine($"- Mouse Sensitivity X: {sensitivityX}");
                     Console.WriteLine($"- Mouse Sensitivity Y: {sensitivityY}");
                     Console.WriteLine($"- Joystick Deadzone: {deadzone}");
-                    Console.WriteLine($"- Mouse Scroll Key: {string.Join(", ", scrollKeys)}");
-                    Console.WriteLine($"- Joystick Keyboard Key: {string.Join(", ", cancelKeys)}");
-                    Console.WriteLine($"- Use Tilt Steering: {useTiltSteering}");
+                    Console.WriteLine($"- Mouse Scroll: {string.Join(", ", scrollKeys)}");
+                    Console.WriteLine($"- Joystick Keyboard: {string.Join(", ", cancelKeys)}");
+                    Console.WriteLine($"- Use Steering: {useTiltSteering}");
+                    Console.WriteLine($"- Stop Program: {string.Join(", ", stopKeys)}");
                 }
 
+                lastX = screenWidth / 2;
+                lastY = screenHeight / 2;
                 wm.WiimoteChanged += wm_WiimoteChanged;
                 var ws = wm.WiimoteState;
                 wm.SetReportType(InputReport.IRAccel, IRSensitivity.Maximum, true);
@@ -183,6 +189,16 @@ class Program
 
                         Process.Start(psi);
                     }
+                    else if (input.Contains("\\x"))
+                    {
+                        ProcessStartInfo psi = new()
+                        {
+                            FileName = "configs.txt",
+                            UseShellExecute = true
+                        };
+
+                        Process.Start(psi);
+                    }
                 }
             }
             catch
@@ -228,7 +244,8 @@ class Program
             Console.WriteLine($"- Joystick Deadzone: {deadzone}");
             Console.WriteLine($"- Mouse Scroll Key: {string.Join(", ", scrollKeys)}");
             Console.WriteLine($"- Joystick Keyboard Key: {string.Join(", ", cancelKeys)}");
-            Console.WriteLine($"- Use Tilt Steering: {useTiltSteering}");
+            Console.WriteLine($"- Use Steering: {useTiltSteering}");
+            Console.WriteLine($"- Stop Program: {string.Join(", ", stopKeys)}");
         }
 
         Console.WriteLine($"Loaded mapping: {fileNames[index]} ({index + 1} of {fileNames.Count})\n");
@@ -292,6 +309,16 @@ class Program
         {
             cancelPressed = false;
         }
+
+        if (AllButtonsPressed(ws, stopKeys))
+        {
+            wm.WiimoteChanged -= wm_WiimoteChanged;
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.Clear();
+            Console.WriteLine("Program Stopped");
+            Console.ResetColor();
+            Console.WriteLine("Type \"\\r\" to restart");
+        }
     }
     /// <summary>
     /// Holds the mouse movement, scrolling and directional-key-pressing functions
@@ -299,17 +326,36 @@ class Program
     /// <param name="ws"></param>
     static void UpdateMouse(WiimoteState ws)
     {
+        if (useTiltSteering)
+        {
+            double roll = (ws.AccelState.Values.Z - 0.5) * 2;
+            double pitch = ws.AccelState.Values.Y * 1;
+
+            if (Math.Abs(roll) < deadzone) roll = 0;
+            if (Math.Abs(pitch) < deadzone) pitch = 0;
+
+            double moveX = pitch * sensitivityX;
+            double moveY = roll * sensitivityY;
+
+            lastX += moveX;
+            lastY += moveY;
+
+            lastX = Math.Clamp(lastX, 0, screenWidth - 1);
+            lastY = Math.Clamp(lastY, 0, screenHeight - 1);
+
+            double scaledX = (lastX / screenWidth) * 65535.0;
+            double scaledY = (lastY / screenHeight) * 65535.0;
+
+            inputSimulator.Mouse.MoveMouseToPositionOnVirtualDesktop(scaledX, scaledY);
+
+            return;
+        }
+
         double joystickX = ws.NunchukState.Joystick.X;
         double joystickY = ws.NunchukState.Joystick.Y;
 
-        if (Math.Abs(joystickX) < deadzone)
-        {
-            joystickX = 0;
-        }
-        if (Math.Abs(joystickY) < deadzone)
-        {
-            joystickY = 0;
-        }
+        if (Math.Abs(joystickX) < deadzone) joystickX = 0;
+        if (Math.Abs(joystickY) < deadzone) joystickY = 0;
 
         if (AllButtonsPressed(ws, scrollKeys))
         {
@@ -647,11 +693,13 @@ class Program
             "\n- Mouse Sensitivity X: the mouse speed for the X axis" +
             "\n- Mouse Sensitivity Y: the mouse speed for the Y axis" +
             "\n- Joystick Deadzone: the amount of ignored small movements of the joystick" +
-            "\n- Mouse Scroll Key: key/s that toggle mouse scrolling when held" +
-            "\n- Joystick Keyboard Key: key/s that toggle the joystick keyboard function:" +
+            "\n- Mouse Scroll: key/s that toggle mouse scrolling when held" +
+            "\n- Joystick Keyboard: key/s that toggle the joystick keyboard function:" +
             "\npresses mappable \"Up2\", \"Right2\", \"Down2\" or \"Left2\" buttons based on the joystick's angle" +
             "\n- Show: whether to show the configs on starting the program or not" +
             "\n- Debug: logs debug info" +
+            "\n- Use Steering: moves the mouse based on the Wiimote's tilt" +
+            "\n- Stop Program: key/s that stop the program" +
             "\n(Configs are found in the \"configs.txt\" file)" +
             "" +
             "\n\nConsole commands:" +
@@ -660,7 +708,8 @@ class Program
             "\n\\c: resets mapping and config files" +
             "\n\\n: switches to the next available mapping file" +
             "\n\\p: switches to the previous available mapping file" +
-            "\n\\o: opens the current mapping file");
+            "\n\\o: opens the current mapping file" +
+            "\n\\x: opens the configs file");
 
         if (!File.Exists(filePath))
         {
@@ -774,7 +823,7 @@ class Program
                             }
                             break;
 
-                        case "Mouse Scroll Key":
+                        case "Mouse Scroll":
                             var keys = value.Split(',');
                             foreach (var key in keys)
                             {
@@ -785,13 +834,24 @@ class Program
                             }
                             break;
 
-                        case "Joystick Keyboard Key":
+                        case "Joystick Keyboard":
                             var keys2 = value.Split(',');
                             foreach (var key in keys2)
                             {
                                 if (Enum.TryParse(key.Trim(), true, out Button parsedButton))
                                 {
                                     cancelKeys.Add(parsedButton);
+                                }
+                            }
+                            break;
+
+                        case "Stop Program":
+                            var keys3 = value.Split(',');
+                            foreach (var key in keys3)
+                            {
+                                if (Enum.TryParse(key.Trim(), true, out Button parsedButton))
+                                {
+                                    stopKeys.Add(parsedButton);
                                 }
                             }
                             break;
@@ -819,7 +879,7 @@ class Program
                             }
                             break;
 
-                        case "Use Tile Steering":
+                        case "Use Steering":
                             if (bool.TryParse(value, out bool parsedTilt))
                             {
                                 useTiltSteering = parsedTilt;
@@ -836,6 +896,7 @@ class Program
                         */
 
                         default:
+                            if (debug)
                             Console.WriteLine($"Unknown config: \"{setting}\"");
                             break;
                     }
