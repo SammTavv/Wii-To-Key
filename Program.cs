@@ -1,5 +1,4 @@
 ﻿using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using WiimoteLib;
 using WindowsInput;
 using WindowsInput.Native;
@@ -28,6 +27,7 @@ class Program
     public static bool cancelPressed = false;
     public static bool useTiltSteering = false;
     public static List<Button> stopKeys = [];
+    public static List<Button> steerKeys = [];
 
     private const int screenWidth = 1920;
     private const int screenHeight = 1080;
@@ -43,8 +43,8 @@ class Program
         $"\nJoystick Keyboard: Plus, Minus" +
         $"\nShow: true" +
         $"\nDebug: false" +
-        $"\nUse Steering: false" +
-        $"\nStop Program: A, B, Home";
+        $"\nStop Program: A, B, Home" +
+        $"\nSteering Wheel: Minus, Left";
 
     /// <summary>
     /// Holds every Wiimote (+ Nunchuck) button
@@ -113,12 +113,10 @@ class Program
                     Console.WriteLine($"- Joystick Deadzone: {deadzone}");
                     Console.WriteLine($"- Mouse Scroll: {string.Join(", ", scrollKeys)}");
                     Console.WriteLine($"- Joystick Keyboard: {string.Join(", ", cancelKeys)}");
-                    Console.WriteLine($"- Use Steering: {useTiltSteering}");
                     Console.WriteLine($"- Stop Program: {string.Join(", ", stopKeys)}");
+                    Console.WriteLine($"- Steering Wheel: {string.Join(", ", steerKeys)}");
                 }
 
-                lastX = screenWidth / 2;
-                lastY = screenHeight / 2;
                 wm.WiimoteChanged += wm_WiimoteChanged;
                 var ws = wm.WiimoteState;
                 wm.SetReportType(InputReport.IRAccel, IRSensitivity.Maximum, true);
@@ -147,7 +145,7 @@ class Program
                     else if (input.Contains("\\c"))
                     {
                         Console.Clear();
-                        File.WriteAllText(filePath, "");
+                        File.WriteAllText(files[index], "");
                         File.WriteAllText("configs.txt", defaultConfigs);
 
                         RestartProgram();
@@ -199,6 +197,16 @@ class Program
 
                         Process.Start(psi);
                     }
+                    else if (input.Contains("\\i"))
+                    {
+                        ProcessStartInfo psi = new()
+                        {
+                            FileName = "infos.txt",
+                            UseShellExecute = true
+                        };
+
+                        Process.Start(psi);
+                    }
                 }
             }
             catch
@@ -244,8 +252,8 @@ class Program
             Console.WriteLine($"- Joystick Deadzone: {deadzone}");
             Console.WriteLine($"- Mouse Scroll Key: {string.Join(", ", scrollKeys)}");
             Console.WriteLine($"- Joystick Keyboard Key: {string.Join(", ", cancelKeys)}");
-            Console.WriteLine($"- Use Steering: {useTiltSteering}");
             Console.WriteLine($"- Stop Program: {string.Join(", ", stopKeys)}");
+            Console.WriteLine($"- Steering Wheel: {string.Join(", ", steerKeys)}");
         }
 
         Console.WriteLine($"Loaded mapping: {fileNames[index]} ({index + 1} of {fileNames.Count})\n");
@@ -318,6 +326,22 @@ class Program
             Console.WriteLine("Program Stopped");
             Console.ResetColor();
             Console.WriteLine("Type \"\\r\" to restart");
+        }
+
+        if (AllButtonsPressed(ws, steerKeys))
+        {
+            useTiltSteering = !useTiltSteering;
+
+            if (useTiltSteering)
+            {
+                sensitivityX *= 2;
+                sensitivityY /= 2;
+            }
+            else
+            {
+                sensitivityX /= 2;
+                sensitivityY *= 2;
+            }
         }
     }
     /// <summary>
@@ -705,11 +729,12 @@ class Program
             "\n\nConsole commands:" +
             "\n\\r: restarts the program, updating every file" +
             "\n\\w: lets you add/update any Button-to-KEY mapping directly from the console" +
-            "\n\\c: resets mapping and config files" +
+            "\n\\c: resets the current mapping and config file" +
             "\n\\n: switches to the next available mapping file" +
             "\n\\p: switches to the previous available mapping file" +
             "\n\\o: opens the current mapping file" +
-            "\n\\x: opens the configs file");
+            "\n\\x: opens the configs file" +
+            "\n\\i: opens this file");
 
         if (!File.Exists(filePath))
         {
@@ -856,6 +881,17 @@ class Program
                             }
                             break;
 
+                        case "Steering Wheel":
+                            var keys4 = value.Split(',');
+                            foreach (var key in keys4)
+                            {
+                                if (Enum.TryParse(key.Trim(), true, out Button parsedButton))
+                                {
+                                    steerKeys.Add(parsedButton);
+                                }
+                            }
+                            break;
+
                         /*
                     case "Use IR":
                         if (bool.TryParse(value, out bool parsedWheel))
@@ -879,13 +915,6 @@ class Program
                             }
                             break;
 
-                        case "Use Steering":
-                            if (bool.TryParse(value, out bool parsedTilt))
-                            {
-                                useTiltSteering = parsedTilt;
-                            }
-                            break;
-
                         /*
                     case "Joystick Keyboard":
                         if (bool.TryParse(value, out bool parsedMousePressKey))
@@ -897,7 +926,7 @@ class Program
 
                         default:
                             if (debug)
-                            Console.WriteLine($"Unknown config: \"{setting}\"");
+                                Console.WriteLine($"Unknown config: \"{setting}\"");
                             break;
                     }
                 }
