@@ -20,7 +20,7 @@ class Program
     public static double sensitivityY = 20;
     public static double deadzone = 0.05;
     public static List<Button> scrollKeys = [];
-    public static List<Button> cancelKeys = [];
+    public static List<Button> modeKeys = [];
     public static bool showConfigs = true;
     public static bool debug = false;
     public static bool mousePressKey = false;
@@ -112,7 +112,7 @@ class Program
                     Console.WriteLine($"- Mouse Sensitivity Y: {sensitivityY}");
                     Console.WriteLine($"- Joystick Deadzone: {deadzone}");
                     Console.WriteLine($"- Mouse Scroll: {string.Join(", ", scrollKeys)}");
-                    Console.WriteLine($"- Joystick Keyboard: {string.Join(", ", cancelKeys)}");
+                    Console.WriteLine($"- Joystick Keyboard: {string.Join(", ", modeKeys)}");
                     Console.WriteLine($"- Stop Program: {string.Join(", ", stopKeys)}");
                     Console.WriteLine($"- Steering Wheel: {string.Join(", ", steerKeys)}");
                 }
@@ -172,7 +172,7 @@ class Program
                     }
                     else if (input.Contains("\\p"))
                     {
-                        index = (index - 1) % files.Count;
+                        index = (index - 1) % 1;
                         LoadKeyMappings(files[index]);
 
                         RestartConsoleOnly();
@@ -211,6 +211,7 @@ class Program
             }
             catch
             {
+                Console.Clear();
                 Console.WriteLine("Connect the Wiimote to start the program\nCheck \"README.txt\" for a tutorial");
                 //RunDvcInst();
                 Console.ReadLine();
@@ -250,8 +251,8 @@ class Program
             Console.WriteLine($"- Mouse Sensitivity X: {sensitivityX}");
             Console.WriteLine($"- Mouse Sensitivity Y: {sensitivityY}");
             Console.WriteLine($"- Joystick Deadzone: {deadzone}");
-            Console.WriteLine($"- Mouse Scroll Key: {string.Join(", ", scrollKeys)}");
-            Console.WriteLine($"- Joystick Keyboard Key: {string.Join(", ", cancelKeys)}");
+            Console.WriteLine($"- Mouse Scroll: {string.Join(", ", scrollKeys)}");
+            Console.WriteLine($"- Joystick Keyboard: {string.Join(", ", modeKeys)}");
             Console.WriteLine($"- Stop Program: {string.Join(", ", stopKeys)}");
             Console.WriteLine($"- Steering Wheel: {string.Join(", ", steerKeys)}");
         }
@@ -305,7 +306,7 @@ class Program
 
         UpdateMouse(ws);
 
-        if (AllButtonsPressed(ws, cancelKeys))
+        if (AllButtonsPressed(ws, modeKeys))
         {
             if (!cancelPressed)
             {
@@ -371,53 +372,59 @@ class Program
             double scaledY = (lastY / screenHeight) * 65535.0;
 
             inputSimulator.Mouse.MoveMouseToPositionOnVirtualDesktop(scaledX, scaledY);
-
-            return;
-        }
-
-        double joystickX = ws.NunchukState.Joystick.X;
-        double joystickY = ws.NunchukState.Joystick.Y;
-
-        if (Math.Abs(joystickX) < deadzone) joystickX = 0;
-        if (Math.Abs(joystickY) < deadzone) joystickY = 0;
-
-        if (AllButtonsPressed(ws, scrollKeys))
-        {
-            if (joystickY > 0.2)
-            {
-                inputSimulator.Mouse.VerticalScroll(1);
-            }
-            else if (joystickY < -0.2)
-            {
-                inputSimulator.Mouse.VerticalScroll(-1);
-            }
-            else if (joystickX > 0.2)
-            {
-                inputSimulator.Mouse.HorizontalScroll(1);
-            }
-            else if (joystickX < -0.2)
-            {
-                inputSimulator.Mouse.HorizontalScroll(-1);
-            }
-        }
-        else if (mousePressKey)
-        {
-            HandleDirectionalKeyPresses(joystickX, joystickY);
         }
         else
         {
-            joystickY = -joystickY;
+            double joystickX = ws.NunchukState.Joystick.X;
+            double joystickY = ws.NunchukState.Joystick.Y;
 
-            int deltaX = (int)(joystickX / sensitivityX * (screenWidth / 2));
-            int deltaY = (int)(joystickY / sensitivityY * (screenHeight / 2));
+            if (Math.Abs(joystickX) < deadzone)
+            {
+                joystickX = 0;
+            }
+            if (Math.Abs(joystickY) < deadzone)
+            {
+                joystickY = 0;
+            }
 
-            lastX += deltaX;
-            lastY -= deltaY;
+            if (AllButtonsPressed(ws, scrollKeys))
+            {
+                if (joystickY > 0.2)
+                {
+                    inputSimulator.Mouse.VerticalScroll(1);
+                }
+                else if (joystickY < -0.2)
+                {
+                    inputSimulator.Mouse.VerticalScroll(-1);
+                }
+                else if (joystickX > 0.2)
+                {
+                    inputSimulator.Mouse.HorizontalScroll(1);
+                }
+                else if (joystickX < -0.2)
+                {
+                    inputSimulator.Mouse.HorizontalScroll(-1);
+                }
+            }
+            else if (mousePressKey)
+            {
+                HandleDirectionalKeyPresses(joystickX, joystickY);
+            }
+            else
+            {
+                joystickY = -joystickY;
 
-            lastX = Math.Max(0, Math.Min(screenWidth, lastX));
-            lastY = Math.Max(0, Math.Min(screenHeight, lastY));
+                int deltaX = (int)(joystickX / sensitivityX * (screenWidth / 2));
+                int deltaY = (int)(joystickY / sensitivityY * (screenHeight / 2));
 
-            inputSimulator.Mouse.MoveMouseBy(deltaX, deltaY);
+                lastX += deltaX;
+                lastY -= deltaY;
+
+                lastX = Math.Max(0, Math.Min(screenWidth, lastX));
+                lastY = Math.Max(0, Math.Min(screenHeight, lastY));
+
+                inputSimulator.Mouse.MoveMouseBy(deltaX, deltaY);
+            }
         }
     }
 
@@ -865,7 +872,7 @@ class Program
                             {
                                 if (Enum.TryParse(key.Trim(), true, out Button parsedButton))
                                 {
-                                    cancelKeys.Add(parsedButton);
+                                    modeKeys.Add(parsedButton);
                                 }
                             }
                             break;
@@ -954,7 +961,7 @@ class Program
                     wm.SetRumble(true);
                 }
 
-                if (!AllButtonsPressed(wm.WiimoteState, scrollKeys) && !AllButtonsPressed(wm.WiimoteState, cancelKeys))
+                if (!AllButtonsPressed(wm.WiimoteState, scrollKeys) && !AllButtonsPressed(wm.WiimoteState, modeKeys))
                 {
                     if (key == VirtualKeyCode.LBUTTON)
                     {
