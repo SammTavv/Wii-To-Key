@@ -18,7 +18,10 @@ class Program
 
     public static double sensitivityX = 40;
     public static double sensitivityY = 20;
-    public static double deadzone = 0.05;
+    public static double sensitivityX2 = 80;
+    public static double sensitivityY2 = 10;
+    public static double deadzoneX = 0.05;
+    public static double deadzoneY = 0.09;
     public static List<Button> scrollKeys = [];
     public static List<Button> modeKeys = [];
     public static bool showConfigs = true;
@@ -34,17 +37,6 @@ class Program
     private const double maxJoystickValue = 0.5;
     private static double lastX = screenWidth / 2;
     private static double lastY = screenHeight / 2;
-
-    private static string defaultConfigs = $"" +
-        $"Mouse Sensitivity X: {sensitivityX}" +
-        $"\nMouse Sensitivity Y: {sensitivityY}" +
-        $"\nJoystick Deadzone: {deadzone}" +
-        $"\nMouse Scroll: C, Z" +
-        $"\nJoystick Keyboard: Plus, Minus" +
-        $"\nShow: true" +
-        $"\nDebug: false" +
-        $"\nStop Program: A, B, Home" +
-        $"\nSteering Wheel: Minus, Left";
 
     /// <summary>
     /// Holds every Wiimote (+ Nunchuck) button
@@ -107,14 +99,7 @@ class Program
 
                 if (showConfigs)
                 {
-                    Console.WriteLine("Current Configs:");
-                    Console.WriteLine($"- Mouse Sensitivity X: {sensitivityX}");
-                    Console.WriteLine($"- Mouse Sensitivity Y: {sensitivityY}");
-                    Console.WriteLine($"- Joystick Deadzone: {deadzone}");
-                    Console.WriteLine($"- Mouse Scroll: {string.Join(", ", scrollKeys)}");
-                    Console.WriteLine($"- Joystick Keyboard: {string.Join(", ", modeKeys)}");
-                    Console.WriteLine($"- Stop Program: {string.Join(", ", stopKeys)}");
-                    Console.WriteLine($"- Steering Wheel: {string.Join(", ", steerKeys)}");
+                    ShowConfigs();
                 }
 
                 wm.WiimoteChanged += wm_WiimoteChanged;
@@ -209,15 +194,53 @@ class Program
                     }
                 }
             }
-            catch
+            catch (WiimoteNotFoundException)
             {
                 Console.Clear();
                 Console.WriteLine("Connect the Wiimote to start the program\nCheck \"README.txt\" for a tutorial");
                 //RunDvcInst();
                 Console.ReadLine();
             }
+            catch
+            {
+                wm.WiimoteChanged -= wm_WiimoteChanged;
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.Clear();
+                Console.WriteLine("Program Stopped");
+                Console.ResetColor();
+                Console.WriteLine("Type \"\\r\" to restart");
+            }
         }
         while (restart);
+    }
+
+    private static string defaultConfigs = $"" +
+        $"Mouse Sensitivity X: {sensitivityX}" +
+        $"\nMouse Sensitivity Y: {sensitivityY}" +
+        $"\nSteer Sensitivity X: {sensitivityX2}" +
+        $"\nSteer Sensitivity Y: {sensitivityY2}" +
+        $"\nDeadzone X: {deadzoneX}" +
+        $"\nDeadzone Y: {deadzoneY}" +
+        $"\nMouse Scroll: C, Z" +
+        $"\nJoystick Keyboard: Plus, Minus" +
+        $"\nShow: true" +
+        $"\nDebug: false" +
+        $"\nStop Program: A, B, Home" +
+        $"\nSteering Wheel: Minus, Left";
+
+    private static void ShowConfigs()
+    {
+        Console.WriteLine("Current Configs:");
+        Console.WriteLine($"- Mouse Sensitivity X: {sensitivityX}");
+        Console.WriteLine($"- Mouse Sensitivity Y: {sensitivityY}");
+        Console.WriteLine($"- Steer Sensitivity X: {sensitivityX2}");
+        Console.WriteLine($"- Steer Sensitivity Y: {sensitivityY2}");
+        Console.WriteLine($"- Deadzone X: {deadzoneX}");
+        Console.WriteLine($"- Deadzone Y: {deadzoneY}");
+        Console.WriteLine($"- Mouse Scroll: {string.Join(", ", scrollKeys)}");
+        Console.WriteLine($"- Joystick Keyboard: {string.Join(", ", modeKeys)}");
+        Console.WriteLine($"- Stop Program: {string.Join(", ", stopKeys)}");
+        Console.WriteLine($"- Steering Wheel: {string.Join(", ", steerKeys)}");
     }
 
     public static void RunDvcInst()
@@ -247,14 +270,7 @@ class Program
 
         if (showConfigs)
         {
-            Console.WriteLine("Current Configs:");
-            Console.WriteLine($"- Mouse Sensitivity X: {sensitivityX}");
-            Console.WriteLine($"- Mouse Sensitivity Y: {sensitivityY}");
-            Console.WriteLine($"- Joystick Deadzone: {deadzone}");
-            Console.WriteLine($"- Mouse Scroll: {string.Join(", ", scrollKeys)}");
-            Console.WriteLine($"- Joystick Keyboard: {string.Join(", ", modeKeys)}");
-            Console.WriteLine($"- Stop Program: {string.Join(", ", stopKeys)}");
-            Console.WriteLine($"- Steering Wheel: {string.Join(", ", steerKeys)}");
+            ShowConfigs();
         }
 
         Console.WriteLine($"Loaded mapping: {fileNames[index]} ({index + 1} of {fileNames.Count})\n");
@@ -332,17 +348,6 @@ class Program
         if (AllButtonsPressed(ws, steerKeys))
         {
             useTiltSteering = !useTiltSteering;
-
-            if (useTiltSteering)
-            {
-                sensitivityX *= 2;
-                sensitivityY /= 2;
-            }
-            else
-            {
-                sensitivityX /= 2;
-                sensitivityY *= 2;
-            }
         }
     }
     /// <summary>
@@ -356,11 +361,11 @@ class Program
             double roll = (ws.AccelState.Values.Z - 0.5) * 2;
             double pitch = ws.AccelState.Values.Y * 1;
 
-            if (Math.Abs(roll) < deadzone) roll = 0;
-            if (Math.Abs(pitch) < deadzone) pitch = 0;
+            if (Math.Abs(roll) < deadzoneY) roll = 0;
+            if (Math.Abs(pitch) < deadzoneX) pitch = 0;
 
-            double moveX = pitch * sensitivityX;
-            double moveY = roll * sensitivityY;
+            double moveX = pitch * sensitivityX2;
+            double moveY = roll * sensitivityY2;
 
             lastX += moveX;
             lastY += moveY;
@@ -371,18 +376,19 @@ class Program
             double scaledX = (lastX / screenWidth) * 65535.0;
             double scaledY = (lastY / screenHeight) * 65535.0;
 
-            inputSimulator.Mouse.MoveMouseToPositionOnVirtualDesktop(scaledX, scaledY);
+            //inputSimulator.Mouse.MoveMouseToPositionOnVirtualDesktop(scaledX, scaledY);
+            inputSimulator.Mouse.MoveMouseBy((int)moveX, (int)moveY);
         }
         else
         {
             double joystickX = ws.NunchukState.Joystick.X;
             double joystickY = ws.NunchukState.Joystick.Y;
 
-            if (Math.Abs(joystickX) < deadzone)
+            if (Math.Abs(joystickX) < deadzoneX)
             {
                 joystickX = 0;
             }
-            if (Math.Abs(joystickY) < deadzone)
+            if (Math.Abs(joystickY) < deadzoneY)
             {
                 joystickY = 0;
             }
@@ -729,7 +735,7 @@ class Program
             "\npresses mappable \"Up2\", \"Right2\", \"Down2\" or \"Left2\" buttons based on the joystick's angle" +
             "\n- Show: whether to show the configs on starting the program or not" +
             "\n- Debug: logs debug info" +
-            "\n- Use Steering: moves the mouse based on the Wiimote's tilt" +
+            "\n- Use Steering: moves the mouse based on the Wiimote's pitch and roll (horizontal)" +
             "\n- Stop Program: key/s that stop the program" +
             "\n(Configs are found in the \"configs.txt\" file)" +
             "" +
@@ -848,10 +854,31 @@ class Program
                             }
                             break;
 
-                        case "Joystick Deadzone":
-                            if (double.TryParse(value, out double parsedDeadzone))
+                        case "Steer Sensitivity X":
+                            if (double.TryParse(value, out double parsedX2))
                             {
-                                deadzone = parsedDeadzone;
+                                sensitivityX2 = parsedX2;
+                            }
+                            break;
+
+                        case "Steer Sensitivity Y":
+                            if (double.TryParse(value, out double parsedY2))
+                            {
+                                sensitivityY2 = parsedY2;
+                            }
+                            break;
+
+                        case "Deadzone X":
+                            if (double.TryParse(value, out double parsedDeadzoneX))
+                            {
+                                deadzoneX = parsedDeadzoneX;
+                            }
+                            break;
+
+                        case "Deadzone Y":
+                            if (double.TryParse(value, out double parsedDeadzoneY))
+                            {
+                                deadzoneY = parsedDeadzoneY;
                             }
                             break;
 
