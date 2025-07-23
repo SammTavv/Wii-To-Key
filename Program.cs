@@ -26,7 +26,7 @@ class Program
     public static List<Button> modeKeys = [];
     public static bool showConfigs = true;
     public static bool debug = false;
-    public static bool mousePressKey = false;
+    public static bool inKeyboardMode = false;
     public static bool cancelPressed = false;
     public static bool useTiltSteering = false;
     public static List<Button> stopKeys = [];
@@ -326,7 +326,7 @@ class Program
         {
             if (!cancelPressed)
             {
-                mousePressKey = !mousePressKey;
+                inKeyboardMode = !inKeyboardMode;
                 cancelPressed = true;
             }
         }
@@ -376,8 +376,15 @@ class Program
             double scaledX = (lastX / screenWidth) * 65535.0;
             double scaledY = (lastY / screenHeight) * 65535.0;
 
-            //inputSimulator.Mouse.MoveMouseToPositionOnVirtualDesktop(scaledX, scaledY);
-            inputSimulator.Mouse.MoveMouseBy((int)moveX, (int)moveY);
+            if (!inKeyboardMode)
+            {
+                //inputSimulator.Mouse.MoveMouseToPositionOnVirtualDesktop(scaledX, scaledY);
+                inputSimulator.Mouse.MoveMouseBy((int)moveX, (int)moveY);
+            }
+            else
+            {
+                HandleDirectionalKeyPresses(moveY, -moveX);
+            }
         }
         else
         {
@@ -412,7 +419,7 @@ class Program
                     inputSimulator.Mouse.HorizontalScroll(-1);
                 }
             }
-            else if (mousePressKey)
+            else if (inKeyboardMode)
             {
                 HandleDirectionalKeyPresses(joystickX, joystickY);
             }
@@ -442,14 +449,14 @@ class Program
     private static DateTime lastDirectionReleaseTime = DateTime.Now;
 
     /// <summary>
-    /// Presses buttons based on the Nunchuk's <paramref name="joystickX"/> position and <paramref name="joystickY"/>
+    /// Presses buttons based on <paramref name="posX"/> and <paramref name="posY"/>
     /// </summary>
-    /// <param name="joystickX"></param>
-    /// <param name="joystickY"></param>
-    static void HandleDirectionalKeyPresses(double joystickX, double joystickY)
+    /// <param name="posX"></param>
+    /// <param name="posY"></param>
+    static void HandleDirectionalKeyPresses(double posX, double posY)
     {
-        double angle = Math.Atan2(joystickY, joystickX) * (180 / Math.PI);
-        bool joystickInMotion = Math.Abs(joystickX) > 0.2 || Math.Abs(joystickY) > 0.2;
+        double angle = Math.Atan2(posY, posX) * (180 / Math.PI);
+        bool joystickInMotion = Math.Abs(posX) > 0.2 || Math.Abs(posY) > 0.2;
 
         if (joystickInMotion)
         {
@@ -732,7 +739,7 @@ class Program
             "\n- Joystick Deadzone: the amount of ignored small movements of the joystick" +
             "\n- Mouse Scroll: key/s that toggle mouse scrolling when held" +
             "\n- Joystick Keyboard: key/s that toggle the joystick keyboard function:" +
-            "\npresses mappable \"Up2\", \"Right2\", \"Down2\" or \"Left2\" buttons based on the joystick's angle" +
+            "\npresses mappable \"Up2\", \"Right2\", \"Down2\" or \"Left2\" buttons based on the joystick/steering wheel rotation" +
             "\n- Show: whether to show the configs on starting the program or not" +
             "\n- Debug: logs debug info" +
             "\n- Use Steering: moves the mouse based on the Wiimote's pitch and roll (horizontal)" +
@@ -747,7 +754,7 @@ class Program
             "\n\\p: switches to the previous available mapping file" +
             "\n\\o: opens the current mapping file" +
             "\n\\x: opens the configs file" +
-            "\n\\i: opens this file");
+            "\n\\i: opens the \"info.txt\" file");
 
         if (!File.Exists(filePath))
         {
@@ -948,15 +955,6 @@ class Program
                                 debug = parsedDebug;
                             }
                             break;
-
-                        /*
-                    case "Joystick Keyboard":
-                        if (bool.TryParse(value, out bool parsedMousePressKey))
-                        {
-                            mousePressKey = parsedMousePressKey;
-                        }
-                        break;
-                        */
 
                         default:
                             if (debug)
