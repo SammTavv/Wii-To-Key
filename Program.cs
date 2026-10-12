@@ -1,19 +1,17 @@
 ﻿using System.Diagnostics;
 using WiimoteLib;
-using WindowsInput;
-using WindowsInput.Native;
+using GlobalInputLib;
 
 class Program
 {
     private static Wiimote wm;
-    private static InputSimulator inputSimulator = new();
 
     private static List<string> files;
     private static List<string> fileNames;
     private static string filePath = Directory.CreateDirectory(Directory.GetCurrentDirectory() + @"\Mappings\") + "default.wiimap";
     private static int index = 0;
 
-    private static Dictionary<Button, List<(VirtualKeyCode Key, bool Holding)>> keyMappings;
+    private static Dictionary<Button, List<(VirtualKey Key, bool Holding)>> keyMappings;
     private static Dictionary<Button, (bool IsPressed, bool Holding)> buttonStates = new();
 
     public static double sensitivityX = 40;
@@ -29,8 +27,10 @@ class Program
     public static bool inKeyboardMode = false;
     public static bool cancelPressed = false;
     public static bool useTiltSteering = false;
+    public static bool inHorizontal = false;
     public static List<Button> stopKeys = [];
     public static List<Button> steerKeys = [];
+    public static List<Button> horizKeys = [];
 
     private const int screenWidth = 1920;
     private const int screenHeight = 1080;
@@ -106,7 +106,9 @@ class Program
                 var ws = wm.WiimoteState;
                 wm.SetReportType(InputReport.IRAccel, IRSensitivity.Maximum, true);
 
+                Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine($"Loaded mapping: {fileNames[index]} ({index + 1} of {fileNames.Count})\n");
+                Console.ResetColor();
 
                 Console.WriteLine($"Program is running\nPress any Wii Remote button...\nOpen the \"README.txt\" file for instructions");
 
@@ -226,7 +228,8 @@ class Program
         $"\nShow: true" +
         $"\nDebug: false" +
         $"\nStop Program: A, B, Home" +
-        $"\nSteering Wheel: Minus, Left";
+        $"\nSteering Wheel: B, Minus, Left," +
+        $"\nHorizontal Layout: B, Plus, Right";
 
     private static void ShowConfigs()
     {
@@ -241,6 +244,7 @@ class Program
         Console.WriteLine($"- Joystick Keyboard: {string.Join(", ", modeKeys)}");
         Console.WriteLine($"- Stop Program: {string.Join(", ", stopKeys)}");
         Console.WriteLine($"- Steering Wheel: {string.Join(", ", steerKeys)}");
+        Console.WriteLine($"- Horizontal Layout: {string.Join(", ", horizKeys)}");
     }
 
     public static void RunDvcInst()
@@ -273,7 +277,9 @@ class Program
             ShowConfigs();
         }
 
+        Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine($"Loaded mapping: {fileNames[index]} ({index + 1} of {fileNames.Count})\n");
+        Console.ResetColor();
 
         Console.WriteLine($"Program is running\nPress any Wii Remote button...\nOpen the \"README.txt\" file for instructions");
 
@@ -292,6 +298,7 @@ class Program
     /// </summary>
     static void RestartProgram()
     {
+        Input.ReleaseKeys();
         Console.Clear();
         Process.Start(Environment.ProcessPath);
         Environment.Exit(0);
@@ -349,6 +356,11 @@ class Program
         {
             useTiltSteering = !useTiltSteering;
         }
+
+        if (AllButtonsPressed(ws, horizKeys))
+        {
+            inHorizontal = !inHorizontal;
+        }
     }
     /// <summary>
     /// Holds the mouse movement, scrolling and directional-key-pressing functions
@@ -359,7 +371,7 @@ class Program
         if (useTiltSteering)
         {
             double roll = (ws.AccelState.Values.Z - 0.5) * 2;
-            double pitch = ws.AccelState.Values.Y * 1;
+            double pitch = ws.AccelState.Values.Y;
 
             if (Math.Abs(roll) < deadzoneY) roll = 0;
             if (Math.Abs(pitch) < deadzoneX) pitch = 0;
@@ -373,13 +385,9 @@ class Program
             lastX = Math.Clamp(lastX, 0, screenWidth - 1);
             lastY = Math.Clamp(lastY, 0, screenHeight - 1);
 
-            double scaledX = (lastX / screenWidth) * 65535.0;
-            double scaledY = (lastY / screenHeight) * 65535.0;
-
             if (!inKeyboardMode)
             {
-                //inputSimulator.Mouse.MoveMouseToPositionOnVirtualDesktop(scaledX, scaledY);
-                inputSimulator.Mouse.MoveMouseBy((int)moveX, (int)moveY);
+                Input.MouseMoveBy((int)moveX, (int)moveY);
             }
             else
             {
@@ -404,19 +412,19 @@ class Program
             {
                 if (joystickY > 0.2)
                 {
-                    inputSimulator.Mouse.VerticalScroll(1);
+                    Input.MouseScrollVertical(120);
                 }
                 else if (joystickY < -0.2)
                 {
-                    inputSimulator.Mouse.VerticalScroll(-1);
+                    Input.MouseScrollVertical(-120);
                 }
                 else if (joystickX > 0.2)
                 {
-                    inputSimulator.Mouse.HorizontalScroll(1);
+                    Input.MouseScrollHorizontal(120);
                 }
                 else if (joystickX < -0.2)
                 {
-                    inputSimulator.Mouse.HorizontalScroll(-1);
+                    Input.MouseScrollHorizontal(-120);
                 }
             }
             else if (inKeyboardMode)
@@ -436,7 +444,7 @@ class Program
                 lastX = Math.Max(0, Math.Min(screenWidth, lastX));
                 lastY = Math.Max(0, Math.Min(screenHeight, lastY));
 
-                inputSimulator.Mouse.MoveMouseBy(deltaX, deltaY);
+                Input.MouseMoveBy(deltaX, deltaY);
             }
         }
     }
@@ -453,30 +461,34 @@ class Program
     /// </summary>
     /// <param name="posX"></param>
     /// <param name="posY"></param>
+    static Button[] currentDirections = [];
+
     static void HandleDirectionalKeyPresses(double posX, double posY)
     {
         double angle = Math.Atan2(posY, posX) * (180 / Math.PI);
         bool joystickInMotion = Math.Abs(posX) > 0.2 || Math.Abs(posY) > 0.2;
 
+        var newDirections = new List<Button>();
+
         if (joystickInMotion)
         {
-            if (angle >= -22.5 && angle < 22.5) PressDirection(ref isKeyPressedRight, Button.Right2);
-            else if (angle >= 22.5 && angle < 67.5) PressDiagonal(ref isKeyPressedUp, ref isKeyPressedRight, Button.Up2, Button.Right2);
-            else if (angle >= 67.5 && angle < 112.5) PressDirection(ref isKeyPressedUp, Button.Up2);
-            else if (angle >= 112.5 && angle < 157.5) PressDiagonal(ref isKeyPressedUp, ref isKeyPressedLeft, Button.Up2, Button.Left2);
-            else if ((angle >= 157.5 && angle <= 180) || (angle < -157.5 && angle >= -180)) PressDirection(ref isKeyPressedLeft, Button.Left2);
-            else if (angle >= -157.5 && angle < -112.5) PressDiagonal(ref isKeyPressedDown, ref isKeyPressedLeft, Button.Down2, Button.Left2);
-            else if (angle >= -112.5 && angle < -67.5) PressDirection(ref isKeyPressedDown, Button.Down2);
-            else if (angle >= -67.5 && angle < -22.5) PressDiagonal(ref isKeyPressedDown, ref isKeyPressedRight, Button.Down2, Button.Right2);
+            if (angle >= -22.5 && angle < 22.5) newDirections.Add(Button.Right2);
+            else if (angle >= 22.5 && angle < 67.5) { newDirections.Add(Button.Up2); newDirections.Add(Button.Right2); }
+            else if (angle >= 67.5 && angle < 112.5) newDirections.Add(Button.Up2);
+            else if (angle >= 112.5 && angle < 157.5) { newDirections.Add(Button.Up2); newDirections.Add(Button.Left2); }
+            else if ((angle >= 157.5 && angle <= 180) || (angle < -157.5 && angle >= -180)) newDirections.Add(Button.Left2);
+            else if (angle >= -157.5 && angle < -112.5) { newDirections.Add(Button.Down2); newDirections.Add(Button.Left2); }
+            else if (angle >= -112.5 && angle < -67.5) newDirections.Add(Button.Down2);
+            else if (angle >= -67.5 && angle < -22.5) { newDirections.Add(Button.Down2); newDirections.Add(Button.Right2); }
         }
-        else
-        {
-            if ((DateTime.Now - lastDirectionReleaseTime).TotalMilliseconds > 100)
-            {
-                ReleaseAllDirections();
-                lastDirectionReleaseTime = DateTime.Now;
-            }
-        }
+
+        foreach (var dir in currentDirections.Except(newDirections))
+            ReleaseKey(dir);
+
+        foreach (var dir in newDirections.Except(currentDirections))
+            PressKey(dir);
+
+        currentDirections = newDirections.ToArray();
     }
 
     static void PressDirection(ref bool isKeyPressed, Button button)
@@ -692,7 +704,7 @@ class Program
     /// </summary>
     public static void WriteFiles()
     {
-        var VirtualKeyCodeArray = Enum.GetValues(typeof(VirtualKeyCode)).Cast<VirtualKeyCode>();
+        var VirtualKeyCodeArray = Enum.GetValues(typeof(VirtualKey)).Cast<VirtualKey>();
         string keycodes = string.Join("\n", VirtualKeyCodeArray.Select(k => $"{k}"));
 
         var WiiButtonArray = Enum.GetValues(typeof(Button)).Cast<Button>();
@@ -773,7 +785,7 @@ class Program
     /// <param name="filePath"></param>
     static void LoadKeyMappings(string filePath)
     {
-        keyMappings = new Dictionary<Button, List<(VirtualKeyCode Key, bool Holding)>>();
+        keyMappings = new Dictionary<Button, List<(VirtualKey Key, bool Holding)>>();
         buttonStates.Clear();
 
         string[] lines = File.ReadAllLines(filePath);
@@ -790,7 +802,7 @@ class Program
 
                 if (Enum.TryParse(buttonName, true, out Button button))
                 {
-                    var keyList = new List<(VirtualKeyCode, bool)>();
+                    var keyList = new List<(VirtualKey, bool)>();
 
                     foreach (string keyCode in keyCodes)
                     {
@@ -802,7 +814,7 @@ class Program
                             trimmedKey = trimmedKey[2..].Trim();
                         }
 
-                        if (Enum.TryParse(trimmedKey, out VirtualKeyCode virtualKey))
+                        if (Enum.TryParse(trimmedKey, out VirtualKey virtualKey))
                         {
                             keyList.Add((virtualKey, holding));
                         }
@@ -810,7 +822,9 @@ class Program
                         {
                             if (trimmedKey != "")
                             {
+                                Console.ForegroundColor = ConsoleColor.Red;
                                 Console.WriteLine($"Invalid key code: \"{trimmedKey}\"");
+                                Console.ResetColor();
                             }
                         }
                     }
@@ -820,7 +834,9 @@ class Program
                 }
                 else
                 {
+                    Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine($"Invalid button: \"{buttonName}\"");
+                    Console.ResetColor();
                 }
             }
         }
@@ -933,6 +949,17 @@ class Program
                             }
                             break;
 
+                        case "Horizontal Layout":
+                            var keys5 = value.Split(',');
+                            foreach (var key in keys5)
+                            {
+                                if (Enum.TryParse(key.Trim(), true, out Button parsedButton))
+                                {
+                                    horizKeys.Add(parsedButton);
+                                }
+                            }
+                            break;
+
                         /*
                     case "Use IR":
                         if (bool.TryParse(value, out bool parsedWheel))
@@ -988,17 +1015,17 @@ class Program
 
                 if (!AllButtonsPressed(wm.WiimoteState, scrollKeys) && !AllButtonsPressed(wm.WiimoteState, modeKeys))
                 {
-                    if (key == VirtualKeyCode.LBUTTON)
+                    if (key == VirtualKey.LMB)
                     {
-                        inputSimulator.Mouse.LeftButtonDown();
+                        Input.MouseLeftDown();
                     }
-                    else if (key == VirtualKeyCode.RBUTTON)
+                    else if (key == VirtualKey.RMB)
                     {
-                        inputSimulator.Mouse.RightButtonDown();
+                        Input.MouseRightDown();
                     }
                     else
                     {
-                        inputSimulator.Keyboard.KeyDown(key);
+                        Input.KeyDown(key);
                     }
                 }
             }
@@ -1021,17 +1048,17 @@ class Program
                     wm.SetRumble(false);
                 }
 
-                if (key == VirtualKeyCode.LBUTTON)
+                if (key == VirtualKey.LMB)
                 {
-                    inputSimulator.Mouse.LeftButtonUp();
+                    Input.MouseLeftUp();
                 }
-                else if (key == VirtualKeyCode.RBUTTON)
+                else if (key == VirtualKey.RMB)
                 {
-                    inputSimulator.Mouse.RightButtonUp();
+                    Input.MouseRightUp();
                 }
                 else
                 {
-                    inputSimulator.Keyboard.KeyUp(key);
+                    Input.KeyUp(key);
                 }
             }
         }
@@ -1077,13 +1104,13 @@ class Program
         string path = Directory.GetCurrentDirectory() + @"\Mappings\default.wiimap";
         string text = "" +
             "# these are useful keys to map, you can find a list of all of them in the \"infos.txt\" file" +
-            "\nUp = VK_W" +
-            "\nDown = VK_S" +
-            "\nLeft = VK_A" +
-            "\nRight = VK_D" +
+            "\nUp = W" +
+            "\nDown = S" +
+            "\nLeft = A" +
+            "\nRight = D" +
             "\nA = SPACE" +
-            "\nC = LBUTTON" +
-            "\nZ = RBUTTON";
+            "\nC = LMB" +
+            "\nZ = RMB";
 
         if (File.Exists(path) && (File.ReadAllText(path) == text || string.IsNullOrEmpty(File.ReadAllText(path))))
         {
